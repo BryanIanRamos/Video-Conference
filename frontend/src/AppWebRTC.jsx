@@ -27,7 +27,7 @@ function AppWebRTC() {
   const [name, setName] = useState("");
   const [error, setError] = useState("");
   const [socketConnected, setSocketConnected] = useState(false);
-  
+
   const myVideo = useRef();
   const userVideo = useRef();
   const connectionRef = useRef();
@@ -43,7 +43,10 @@ function AppWebRTC() {
           audio: true,
         });
 
-        console.log("Media stream obtained with tracks:", mediaStream.getTracks().length);
+        console.log(
+          "Media stream obtained with tracks:",
+          mediaStream.getTracks().length
+        );
         setStream(mediaStream);
 
         if (myVideo.current) {
@@ -62,7 +65,7 @@ function AppWebRTC() {
       console.log("Socket connected");
       setSocketConnected(true);
     });
-    
+
     socket.on("connect_error", (err) => {
       console.error("Socket connection error:", err);
       setError(`Server connection error: ${err.message}`);
@@ -80,7 +83,7 @@ function AppWebRTC() {
       setReceivingCall(true);
       setCaller(data.from);
       setName(data.name);
-      
+
       console.log("Received signal data:", data.signal);
       setCallerSignal(data.signal);
       callRef.current = data;
@@ -97,14 +100,25 @@ function AppWebRTC() {
         console.error("No connection reference when call was accepted");
       }
     });
-    
+
+    // Handle ICE candidate relay from remote peer
+    socket.on("iceCandidate", (data) => {
+      console.log("Received ICE candidate from remote peer");
+      if (connectionRef.current && data.candidate) {
+        connectionRef.current.signal({
+          type: "ice",
+          candidate: data.candidate,
+        });
+      }
+    });
+
     // Handle call errors
     socket.on("callError", (data) => {
       console.error("Call error:", data.message);
       setError(`Call error: ${data.message}`);
       setCallEnded(true);
     });
-    
+
     // Handle call ended
     socket.on("callEnded", (data) => {
       console.log("Call ended by", data?.from || "server");
@@ -147,7 +161,7 @@ function AppWebRTC() {
       setError("Camera/microphone not available");
       return;
     }
-    
+
     // Check if socket is connected
     if (!socketConnected) {
       console.error("Socket not connected");
@@ -164,13 +178,22 @@ function AppWebRTC() {
     });
 
     peer.on("signal", (data) => {
-      console.log("Generated signal data to send to peer", data);
-      socket.emit("callUser", {
-        userToCall: id,
-        signalData: data,
-        from: me,
-        name: name || "Anonymous",
-      });
+      if (data.type === "ice") {
+        // Relay ICE candidate to remote peer
+        socket.emit("iceCandidate", {
+          to: id,
+          candidate: data.candidate,
+        });
+      } else {
+        // SDP offer/answer
+        console.log("Generated signal data to send to peer", data);
+        socket.emit("callUser", {
+          userToCall: id,
+          signalData: data,
+          from: me,
+          name: name || "Anonymous",
+        });
+      }
     });
 
     peer.on("stream", (remoteStream) => {
@@ -179,7 +202,7 @@ function AppWebRTC() {
         userVideo.current.srcObject = remoteStream;
       }
     });
-    
+
     peer.on("error", (err) => {
       console.error("WebRTC error:", err);
       setError(`WebRTC error: ${err.message || err}`);
@@ -187,7 +210,7 @@ function AppWebRTC() {
 
     // Store the peer connection
     connectionRef.current = peer;
-    
+
     console.log("Call initiated, waiting for answer...");
   };
 
@@ -200,7 +223,7 @@ function AppWebRTC() {
       setError("Camera/microphone not available");
       return;
     }
-    
+
     // Check if we have a call to answer
     if (!callerSignal) {
       console.error("No caller signal to answer");
@@ -218,8 +241,17 @@ function AppWebRTC() {
     });
 
     peer.on("signal", (data) => {
-      console.log("Generated answer signal to send to caller", data);
-      socket.emit("answerCall", { signal: data, to: caller });
+      if (data.type === "ice") {
+        // Relay ICE candidate to remote peer
+        socket.emit("iceCandidate", {
+          to: caller,
+          candidate: data.candidate,
+        });
+      } else {
+        // SDP answer
+        console.log("Generated answer signal to send to caller", data);
+        socket.emit("answerCall", { signal: data, to: caller });
+      }
     });
 
     peer.on("stream", (remoteStream) => {
@@ -228,14 +260,14 @@ function AppWebRTC() {
         userVideo.current.srcObject = remoteStream;
       }
     });
-    
+
     peer.on("error", (err) => {
       console.error("WebRTC error in answer:", err);
       setError(`WebRTC error: ${err.message || err}`);
     });
 
     console.log("Processing caller signal data");
-    
+
     // Important: Make sure we have a valid signal to process
     if (callerSignal) {
       // Process the signal with a small delay to ensure the peer is fully initialized
@@ -247,7 +279,7 @@ function AppWebRTC() {
       console.error("No caller signal data to process");
       setError("Invalid call data");
     }
-    
+
     connectionRef.current = peer;
   };
 
@@ -256,18 +288,18 @@ function AppWebRTC() {
     setCallEnded(true);
     setReceivingCall(false);
     setCallAccepted(false);
-    
+
     // Notify the other peer if we have an active connection
     if (callAccepted && !callEnded) {
       socket.emit("endCall", { to: caller || idToCall });
     }
-    
+
     // Clean up the connection
     if (connectionRef.current) {
       connectionRef.current.destroy();
       connectionRef.current = null;
     }
-    
+
     // Reset remote video
     if (userVideo.current) {
       userVideo.current.srcObject = null;
@@ -309,13 +341,13 @@ function AppWebRTC() {
             ) : null}
           </div>
         </div>
-        
+
         {error && (
           <div style={{ color: "red", margin: "10px 0", textAlign: "center" }}>
             {error}
           </div>
         )}
-        
+
         <div className="myId">
           <TextField
             id="filled-basic"
