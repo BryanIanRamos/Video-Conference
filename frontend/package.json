@@ -10,8 +10,13 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@material-ui/core": "^4.12.4",
+    "@material-ui/icons": "^4.11.3",
     "react": "^19.1.1",
-    "react-dom": "^19.1.1"
+    "react-copy-to-clipboard": "^5.1.0",
+    "react-dom": "^19.1.1",
+    "simple-peer": "^9.11.1",
+    "socket.io-client": "^4.8.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.33.0",
