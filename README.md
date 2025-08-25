@@ -117,5 +117,3 @@ If you'd like, I can:
 - add a UI indicator showing whether the connection is direct (host/srflx) or relayed (relay/TURN) using getStats.
 
 ---
-
-License: MIT (add your preferred license)
