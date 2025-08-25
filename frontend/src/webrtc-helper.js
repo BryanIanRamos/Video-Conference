@@ -97,22 +97,57 @@ class WebRTCPeer {
         }
       };
 
-      // Listen for remote stream
+      // Listen for remote stream (support both event.streams and standalone tracks)
+      this._remoteStream = null; // will lazily hold remote tracks when event.streams is unavailable
       this.pc.ontrack = (event) => {
         console.log("[WebRTC] Remote track received:", event.track.kind);
 
-        // Make sure we have a valid stream
+        // If the browser provided a MediaStream in event.streams, prefer that
         if (event.streams && event.streams[0]) {
+          this._hasRemoteStream = true;
+          this._remoteStream = event.streams[0];
+
+          if (this.listeners["stream"]) {
+            this.listeners["stream"].forEach((cb) => {
+              console.log(
+                "[WebRTC] Emitting stream event with remote stream (from event.streams[0])"
+              );
+              try {
+                cb(this._remoteStream);
+              } catch (err) {
+                console.error("[WebRTC] Error in stream listener:", err);
+              }
+            });
+          }
+          return;
+        }
+
+        // Fallback: some browsers/firewalls deliver tracks without event.streams.
+        // Create or reuse a MediaStream and add incoming track to it.
+        if (!this._remoteStream) {
+          this._remoteStream = new MediaStream();
+        }
+        try {
+          this._remoteStream.addTrack(event.track);
           this._hasRemoteStream = true;
 
           if (this.listeners["stream"]) {
             this.listeners["stream"].forEach((cb) => {
-              console.log("[WebRTC] Emitting stream event with remote stream");
-              cb(event.streams[0]);
+              console.log(
+                "[WebRTC] Emitting stream event with constructed remote MediaStream"
+              );
+              try {
+                cb(this._remoteStream);
+              } catch (err) {
+                console.error("[WebRTC] Error in stream listener:", err);
+              }
             });
           }
-        } else {
-          console.warn("[WebRTC] Received track but no associated stream");
+        } catch (err) {
+          console.error(
+            "[WebRTC] Failed to add remote track to MediaStream:",
+            err
+          );
         }
       };
 

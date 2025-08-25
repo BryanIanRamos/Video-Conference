@@ -34,6 +34,7 @@ function AppWebRTC() {
   const userVideo = useRef();
   const connectionRef = useRef();
   const callRef = useRef();
+  const [remoteStream, setRemoteStream] = useState(null);
 
   // Get available video input devices (cameras)
   useEffect(() => {
@@ -80,7 +81,6 @@ function AppWebRTC() {
       }
     };
     getMedia();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCamera]);
 
   // Handle camera selection change
@@ -152,7 +152,17 @@ function AppWebRTC() {
     // Handle call ended
     socket.on("callEnded", (data) => {
       console.log("Call ended by", data?.from || "server");
-      endCall();
+      // Clean up locally without depending on outer endCall reference
+      setCallEnded(true);
+      setReceivingCall(false);
+      setCallAccepted(false);
+      if (connectionRef.current) {
+        connectionRef.current.destroy();
+        connectionRef.current = null;
+      }
+      if (userVideo.current) {
+        userVideo.current.srcObject = null;
+      }
     });
 
     // Clean up function
@@ -214,8 +224,11 @@ function AppWebRTC() {
 
     peer.on("stream", (remoteStream) => {
       console.log("Received stream from peer:", remoteStream.id);
-      if (userVideo.current) {
-        userVideo.current.srcObject = remoteStream;
+      // Store remote stream in state so a later-mounted video element can receive it
+      if (remoteStream && remoteStream !== stream) {
+        setRemoteStream(remoteStream);
+      } else if (remoteStream === stream) {
+        console.warn("[WebRTC] Warning: remoteStream is the same as local stream!");
       }
     });
 
@@ -272,8 +285,9 @@ function AppWebRTC() {
 
     peer.on("stream", (remoteStream) => {
       console.log("Received stream from caller:", remoteStream.id);
-      if (userVideo.current) {
-        userVideo.current.srcObject = remoteStream;
+      // Store remote stream in state to ensure the UI effect attaches it when ready
+      if (remoteStream) {
+        setRemoteStream(remoteStream);
       }
     });
 
@@ -321,6 +335,27 @@ function AppWebRTC() {
       userVideo.current.srcObject = null;
     }
   };
+
+  // Attach remote stream to the video element when it becomes available
+  useEffect(() => {
+    if (!remoteStream || !userVideo.current) return;
+
+    userVideo.current.srcObject = remoteStream;
+
+    // Try to play; some browsers block autoplay with audio, so handle the promise
+    const p = userVideo.current.play && userVideo.current.play();
+    if (p && p.catch) {
+      p.catch((err) => {
+        console.warn("Remote video play() was blocked, muting and retrying", err);
+        try {
+          userVideo.current.muted = true;
+          userVideo.current.play && userVideo.current.play().catch(() => {});
+        } catch {
+          /* ignore */
+        }
+      });
+    }
+  }, [remoteStream]);
 
   return (
     <>
