@@ -27,39 +27,69 @@ function AppWebRTC() {
   const [name, setName] = useState("");
   const [error, setError] = useState("");
   const [socketConnected, setSocketConnected] = useState(false);
+  const [videoDevices, setVideoDevices] = useState([]);
+  const [selectedCamera, setSelectedCamera] = useState("");
 
   const myVideo = useRef();
   const userVideo = useRef();
   const connectionRef = useRef();
   const callRef = useRef();
 
+  // Get available video input devices (cameras)
   useEffect(() => {
-    // Get user media stream
+    const getDevices = async () => {
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoInputs = devices.filter((d) => d.kind === "videoinput");
+        setVideoDevices(videoInputs);
+        if (videoInputs.length > 0 && !selectedCamera) {
+          setSelectedCamera(videoInputs[0].deviceId);
+        }
+      } catch (err) {
+        setError("Could not enumerate devices: " + err.message);
+      }
+    };
+    getDevices();
+  }, [selectedCamera]);
+
+  // Get user media stream (with selected camera)
+  useEffect(() => {
     const getMedia = async () => {
       try {
-        console.log("Requesting media permissions...");
-        const mediaStream = await navigator.mediaDevices.getUserMedia({
-          video: true,
+        console.log("Requesting media permissions (720p@15fps)...");
+        const constraints = {
+          video: {
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            frameRate: { ideal: 15, max: 15 },
+          },
           audio: true,
-        });
-
-        console.log(
-          "Media stream obtained with tracks:",
-          mediaStream.getTracks().length
+        };
+        if (selectedCamera) {
+          constraints.video.deviceId = { exact: selectedCamera };
+        }
+        const mediaStream = await navigator.mediaDevices.getUserMedia(
+          constraints
         );
         setStream(mediaStream);
-
         if (myVideo.current) {
           myVideo.current.srcObject = mediaStream;
         }
       } catch (err) {
-        console.error("Error accessing media devices:", err);
         setError(`Camera/microphone error: ${err.message}`);
       }
     };
-
     getMedia();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCamera]);
 
+  // Handle camera selection change
+  const handleCameraChange = (e) => {
+    setSelectedCamera(e.target.value);
+  };
+
+  // Socket event listeners and cleanup
+  useEffect(() => {
     // Socket connection event
     socket.on("connect", () => {
       console.log("Socket connected");
@@ -127,21 +157,7 @@ function AppWebRTC() {
 
     // Clean up function
     return () => {
-      console.log("Cleaning up component");
-      if (stream) {
-        stream.getTracks().forEach((track) => {
-          console.log("Stopping track:", track.kind);
-          track.stop();
-        });
-      }
-
-      if (connectionRef.current) {
-        console.log("Destroying connection");
-        connectionRef.current.destroy();
-        connectionRef.current = null;
-      }
-
-      // Remove socket listeners
+      console.log("Cleaning up socket listeners");
       socket.off("me");
       socket.off("callUser");
       socket.off("callAccepted");
@@ -349,6 +365,28 @@ function AppWebRTC() {
         )}
 
         <div className="myId">
+          {videoDevices.length > 0 && (
+            <div style={{ marginBottom: "1rem", width: "100%" }}>
+              <label
+                htmlFor="camera-select"
+                style={{ color: "#fff", marginRight: 8 }}
+              >
+                Camera:
+              </label>
+              <select
+                id="camera-select"
+                value={selectedCamera}
+                onChange={handleCameraChange}
+                style={{ padding: "0.5rem", borderRadius: 8, minWidth: 180 }}
+              >
+                {videoDevices.map((device) => (
+                  <option key={device.deviceId} value={device.deviceId}>
+                    {device.label || `Camera ${device.deviceId.slice(-4)}`}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <TextField
             id="filled-basic"
             label="Name"
